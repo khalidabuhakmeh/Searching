@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net5.0</TargetFramework>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="CsvHelper" Version="27.0.4" />
+      <PackageReference Include="LunrCore" Version="2.3.8.5" />
+      <PackageReference Include="Spectre.Console" Version="0.39.1-preview.0.21" />
+      <PackageReference Include="System.Linq.Async" Version="5.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="us_cities.csv">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
+</Project>
