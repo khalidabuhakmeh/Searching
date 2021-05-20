@@ -3,71 +3,51 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using CsvHelper;
+using CsvHelper.Configuration;
+using CsvHelper.Configuration.Attributes;
 using Lunr;
 using Spectre.Console;
 
-var config = new CsvHelper.Configuration.CsvConfiguration(CultureInfo.InvariantCulture)
-{
-    Delimiter = "|",
-    HasHeaderRecord = true,
-    MissingFieldFound = null
-};
-using var reader = new StreamReader("us_cities.csv");
-using var csv = new CsvHelper.CsvReader(reader, config);
-
 // our database
 var cities = new Dictionary<string, City>();
+var status = AnsiConsole.Status().Spinner(Spinner.Known.Earth).AutoRefresh(true);
 
 // let's build our search index
 Lunr.Index index = null;
-var progress = AnsiConsole
-    .Progress()
-    .Columns(
-        new SpinnerColumn(),
-        new TaskDescriptionColumn(),
-        new ElapsedTimeColumn()
-    )
-    .AutoClear(true);
-
 const string indexName = "local.index.json";
-await progress.StartAsync(async ctx =>
+await status.StartAsync("Thinking...", async ctx =>
 {
-    var loadCities = ctx.AddTask("[green]loading cities...[/]");
-    loadCities.StartTask();
+    ctx.Status("[green]loading cities...[/]");
+    var config = new CsvConfiguration(CultureInfo.InvariantCulture) {
+        Delimiter = "|",
+        HasHeaderRecord = true,
+        MissingFieldFound = null
+    };
+    using var reader = new StreamReader("us_cities.csv");
+    using var csv = new CsvReader(reader, config);
     
-    var count = 0;
-    await foreach (var city in csv.GetRecordsAsync<City>())
+    await foreach (var city in csv.GetRecordsAsync<City>().Select((city, id) => city.WithId(id)))
     {
-        // assumes each row is unique
-        city.Id = $"{++count}";
-        // add to our database
         cities.Add(city.Id, city);
     }
 
-    loadCities.Description = $"✅ {loadCities.Description}";
-    loadCities.StopTask();
-
     if (File.Exists(indexName))
     {
-        var load = ctx.AddTask("[green]loading index from disk...[/]");
-        load.StartTask();
+        ctx.Status("[green]loading index from disk...[/]");
         var json = await File.ReadAllTextAsync(indexName);
         index = Lunr.Index.LoadFromJson(json);
-        
-        load.Description = $"✅ {load.Description}";
-        load.StopTask();
     }
     else
     {
-        var build = ctx.AddTask("[green]building index...[/]");
-        build.StartTask();
+        ctx.Status("[green]building index...[/]");
         
         index = await Lunr.Index.Build(async builder =>
         {
             foreach (var field in City.Fields)
                 builder.AddField(field);
 
-            foreach (var (id, city) in cities)
+            foreach (var (_, city) in cities)
             {
                 await builder.Add(city.ToDocument());
             }
@@ -75,8 +55,6 @@ await progress.StartAsync(async ctx =>
 
         await using var file = File.OpenWrite(indexName);
         await index.SaveToJsonStream(file);
-        build.Description = $"✅ {build.Description}";
-        build.StopTask();
     }
 });
 var running = true;
@@ -114,12 +92,18 @@ public class City
 {
     // Headers:
     // City|State short|State full|County|City alias
-    [CsvHelper.Configuration.Attributes.Ignore] public string Id { get; set; }
-    [CsvHelper.Configuration.Attributes.Name("City")] public string Name { get; set; }
-    [CsvHelper.Configuration.Attributes.Name("State full")] public string StateName { get; set; }
-    [CsvHelper.Configuration.Attributes.Name("State short")] public string StateAbbreviation { get; set; }
-    [CsvHelper.Configuration.Attributes.Name("County")] public string County { get; set; }
-    [CsvHelper.Configuration.Attributes.Name("City alias")] public string Alias { get; set; }
+    [Ignore] public string Id { get; set; }
+    [Name("City")] public string Name { get; set; }
+    [Name("State full")] public string StateName { get; set; }
+    [Name("State short")] public string StateAbbreviation { get; set; }
+    [Name("County")] public string County { get; set; }
+    [Name("City alias")] public string Alias { get; set; }
+    
+    public City WithId(int id)
+    {
+        Id = id.ToString();
+        return this;
+    }
 
     public Document ToDocument()
     {
